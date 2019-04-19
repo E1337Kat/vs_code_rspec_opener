@@ -16,7 +16,7 @@
 	"contributes": {
 		"commands": [{
 			"command": "extension.openSpecs",
-			"title": "Open that spec ref"
+			"title": "OpenSpec app file"
 		}]
 	},
 	"scripts": {
