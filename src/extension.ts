@@ -13,16 +13,20 @@ export function activate(context: vscode.ExtensionContext) {
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('extension.openSpecs', () => {
-		// The code you place here will be executed every time your command is executed
-		openSpecsFile();
-	});
+	let disposable = [];
+	disposable.push(vscode.commands.registerCommand('extension.openApps', () => {
+		openAppFile();
+	}));
+	disposable.push(vscode.commands.registerCommand('extension.openSpecs', () => {
+		openTestFile();
+	}));
 
-	context.subscriptions.push(disposable);
+	context.subscriptions.push(disposable[0]);
+	context.subscriptions.push(disposable[1]);
 }
 
-async function openSpecsFile() {
-	let success;
+async function openAppFile() {
+	let result;
 
 	// Get the active Editor
 	let active_editor = vscode.window.activeTextEditor;
@@ -32,45 +36,204 @@ async function openSpecsFile() {
 		// We get the document URI of the current document.
 		let active_uri = active_editor.document.uri;
 
-		// We want to know if this is a ruby spec file, so we search
-		// the uri for the notable '_spec.rb'. If there is at least
+		if (active_uri.fsPath.search(".rb") <= 0) {
+			return Promise.resolve(false);
+		}
+
+		// We want to know what kind of test suite we are looking at, so we search
+		// the uri for the notable identifier in the path. If there is at least
 		// one instance of that, then we know we have our girl.
-		if (active_uri.toString().search("_spec.rb") > 0) {
+		if (active_uri.fsPath.search(/\/spec\//) >= 0) {
+			result = process_spec_file(active_uri, 'spec');
+		} else if (active_uri.fsPath.search(/\/test\//) >= 0) {
+			result = process_spec_file(active_uri, 'test');
+		} else {
+			vscode.window.showInformationMessage('Wow, you fucked up!\n' + active_uri.toString() + ' is not a valid file. :(');
+			result = Promise.resolve(false);
+		}
 
-			// So we split the uri into an array using the forward slash as the delimiter.
-			let path_elements = active_uri.toString().split('/');
+		return result;
 
-			// Aaaaand we search that array for an element 'spec'
-			// when we do find it, we toss it and all elements before it away
-			let spec_ref = 0;
-			path_elements.forEach(function (element, index) {
-				if (element === 'spec') {
-					path_elements[index] = path_elements[index].replace('spec', 'app');
-					// path_elements = path_elements.slice(index + 1, path_elements.length);
+	} else {
+		vscode.window.showInformationMessage("Hmm, doesn't look like this is a workspace. :(");
+		return Promise.resolve(false);
+	}
+}
+
+async function openTestFile() {
+	// Get the active Editor
+	let active_editor = vscode.window.activeTextEditor;
+
+  // if the active editor exists
+	if (active_editor) {
+		// We get the document URI of the current document.
+		let active_uri = active_editor.document.uri;
+
+		if (active_uri.fsPath.search(".rb") <= 0) {
+			return Promise.resolve(false);
+		}
+
+
+		const did_process = await determineTestSuite()
+			.then( (test_word) => {
+				if (test_word === 'none') {
+					return Promise.resolve(false);
+				} else {
+					let result;
+					if (active_uri.fsPath.search(/\/app\//) >= 0) {
+						result = process_app_file(active_uri, test_word);
+					} else if (active_uri.fsPath.search(/^((?!spec|test).)*lib\//) >= 0) {
+						// only matches if lib is not preceded by the test folder.
+						// It's crude, but should work.
+						result = process_lib_file(active_uri, test_word);
+					} else {
+						vscode.window.showInformationMessage('Wow, you fucked up!\n' + active_uri.toString() + ' is not a valid test file. :(');
+						result = Promise.resolve(false);
+					}
+
+					return result;
 				}
 			});
 
-			// Now we need to get the actual filename we are looking for. 
-			// We know that the desired filename's spec will look something 
-			// like `filename_controller_spec.rb`. So we just replace
-			// the '_spec' with nothing, and we are golden.
-			// We also remove the last element having gotten the filename we need.
-			let refed_filename = path_elements[path_elements.length - 1];
-			path_elements = path_elements.slice(3, path_elements.length - 1);
-			refed_filename = refed_filename.replace('_spec', '');
-
-			// Finally, we can build the path to the file we want to open. 
-			// We build a file URI by prepending '/app/' then the path array 
-			// which is joined together with a forward slash between each one.
-			// and lastly tacking on the end the name of the file we want.
-			let refed_file_uri = vscode.Uri.file(path_elements.join('/') + '/' + refed_filename);
-
-			// Finally we can end this fucker and open the file... hope it works
-			success = await vscode.commands.executeCommand('vscode.open', refed_file_uri);
-		} else {
-			vscode.window.showInformationMessage('Wow, you fucked up!\n' + active_uri.toString() + ' is not a valid rspec file. :(');
-		}
+		return did_process;
+	} else {
+		vscode.window.showInformationMessage("Hmm, doesn't look like this is a workspace. :(");
+		return Promise.resolve(false);
 	}
+}
+
+/**
+ * Finds files that use the general test suite, if found then returns test_keyword `test`,
+ * otherwise checks if rspec file structure exists. If found, the test_keyword `spec` is
+ * returned. In the case neither file structure exists, returns test_keyword `nope`.
+ * 
+ * @return A thenable that resolves to the appropriate test suite keyword or `nope` if neither.
+ */
+async function determineTestSuite() {
+	const testy_results = await vscode.workspace.findFiles('**/test/**/*_test.rb', null, 1);
+	if (testy_results.length !== 1) {
+		vscode.workspace.findFiles('**/spec/**/*_spec.rb', null, 1).then((specy_results) => {
+			if (specy_results.length !== 1) {
+				return Promise.resolve('nope');
+			}
+			else {
+				return Promise.resolve('spec');
+			}
+		});
+	}
+	else {
+		return Promise.resolve('test');
+	}
+	return Promise.resolve('nope');
+}
+
+async function process_app_file(active_uri: vscode.Uri, test_keyword: String) {
+	let path_elements = active_uri.toString().split('/');
+
+	// build the app file's spec path
+	let file_uri = build_test_file_path(path_elements, test_keyword, false);
+
+	// Finally we can end this fucker and open the file... hope it works
+	// we return true or false depending on the result.
+	return await try_and_open_file(file_uri);
+}
+
+async function process_lib_file(active_uri: vscode.Uri, test_keyword: String) {
+	let path_elements = active_uri.toString().split('/');
+
+	// build the lib's spec file path
+	let file_uri = build_test_file_path(path_elements, test_keyword, true);
+
+	// Finally we can end this fucker and open the file... hope it works
+	// we return true or false depending on the result.
+	return await try_and_open_file(file_uri);
+}
+
+async function process_spec_file(active_uri: vscode.Uri, test_keyword: String) {
+	// So we split the uri into an array using the forward slash as the delimiter.
+	let path_elements = active_uri.toString().split('/');
+
+	let lib = path_elements.includes('lib') ? true : false;
+	
+	// build the source file path
+	let file_uri = build_source_file_path(path_elements, test_keyword, lib);
+
+	// Finally we can end this fucker and open the file... hope it works
+	// we return true or false depending on the result.
+	return await try_and_open_file(file_uri);
+}
+
+function build_source_file_path(existing_path: Array<String>, test_keyword: String, library: Boolean) {
+
+	// Aaaaand we search that array for an element 'spec'
+	// when we do find it, we toss it and all elements before it away
+	existing_path.forEach(function (element, index) {
+		if (element === test_keyword) {
+			let replacable = test_keyword.toString();
+			let replacer = library ? 'lib' : 'app';
+			if (library) {
+				existing_path.splice(index + 1, 1);
+			}
+			existing_path[index] = existing_path[index].replace(replacable, replacer);
+		}
+	});
+
+	// Grab path_length because is of great import
+	let path_length = existing_path.length - 1;
+
+	// Now we need to get the actual filename we are looking for. We know that the desired
+	// filename's source will look something like `filename_controller.rb`. So we just add
+	// in the '_spec' with nothing, and we are golden. We also remove the last element
+	// having gotten the filename we need.
+	let source_file = existing_path[path_length];
+	existing_path = existing_path.slice(3, path_length);
+	source_file = source_file.replace('_' + test_keyword, '');
+
+	// Finally, we can build the path to the file we want to open. We build a file URI by joining
+	// together all elements with a forward slash between each one. Lastly, we tack on the
+	// end the name of the file we want.
+	return vscode.Uri.file(existing_path.join('/') + '/' + source_file);
+}
+
+function build_test_file_path(existing_path: Array<String>, test_keyword: String, library: Boolean) {
+	let path_type = library ? 'lib' : 'app';
+
+	// We build a file URI by prepending '/spec/' to the existing relative path as needed
+	existing_path.forEach(function (element, index) {
+		if (element === path_type) {
+			let replacable = path_type;
+			let replacer = library ? [test_keyword.toString(), path_type].join('/') : test_keyword.toString();
+			existing_path[index] = existing_path[index].replace(replacable, replacer);
+		}
+	});
+
+	// Grab path_length because is of great import
+	let path_length = existing_path.length - 1;
+
+	// Now we need to get the actual filename we are looking for. 
+	// We know that the desired filename's spec will look something 
+	// like `filename_controller_spec.rb`. So we just replace
+	// the '_spec' with nothing, and we are golden.
+	// We also remove the last element having gotten the filename we need.
+	let filename = existing_path[path_length];
+	existing_path = existing_path.slice(3, path_length);
+
+	// Build the spec file name by spliting around the `.` and then insert the correct file ending. 
+	let file = filename.split('.');
+	let test_file = file[0] + '_' + test_keyword + '.' + file[1];
+
+	// Finally, we can build the path to the file we want to open. We build a file URI by joining
+	// together all elements with a forward slash between each one. Lastly, we tack on the
+	// end the name of the file we want.
+	return vscode.Uri.file(existing_path.join('/') + '/' + test_file);
+}
+
+async function try_and_open_file(file_uri: vscode.Uri) {
+	return await vscode.commands.executeCommand('vscode.open', file_uri).then(function() {
+		return true;
+	}, function() {
+		return false;
+	});
 }
 
 // this method is called when your extension is deactivated

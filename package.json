@@ -2,7 +2,7 @@
 	"name": "openspecs",
 	"displayName": "openSpecs",
 	"description": "Easily open files that your specs are written for ^_^",
-	"version": "0.0.1",
+	"version": "0.1.1",
 	"engines": {
 		"vscode": "^1.33.0"
 	},
@@ -15,8 +15,12 @@
 	"main": "./out/extension.js",
 	"contributes": {
 		"commands": [{
-			"command": "extension.openSpecs",
+			"command": "extension.openApps",
 			"title": "OpenSpec app file"
+		},
+		{
+			"command": "extension.openSpecs",
+			"title": "OpenSpec test file"
 		}]
 	},
 	"scripts": {
