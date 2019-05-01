@@ -3,7 +3,7 @@
 	"displayName": "SpecEase",
 	"description": "Easily open files that your specs are written for ^_^",
 	"publisher": "PIE",
-	"version": "0.2.0",
+	"version": "0.1.2",
 	"homepage": "https://github.com/e1337kat/vscode_specease/blob/master/README.md",
 	"repository": {
 		"type": "git",
