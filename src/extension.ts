@@ -48,7 +48,8 @@ async function openAppFile() {
 		} else if (active_uri.fsPath.search(/\/test\//) >= 0) {
 			result = process_spec_file(active_uri, 'test');
 		} else {
-			vscode.window.showInformationMessage('Wow, you fucked up!\n' + active_uri.toString() + ' is not a valid file. :(');
+			vscode.window.showInformationMessage('Hmmm, doesn\'t look like I can work wih this kind of file. :(');
+			console.log('Tried to use with invalid test suite.\n' + active_uri.toString());
 			result = Promise.resolve(false);
 		}
 
@@ -74,11 +75,13 @@ async function openTestFile() {
 		}
 
 
-		const did_process = await determineTestSuite()
+		return determineTestSuite()
 			.then( (test_word) => {
 				if (test_word === 'none') {
+					vscode.window.showInformationMessage('Hmmm, doesn\'t look like I can work wih this kind of file. :(');
+					console.log('Tried to use with invalid test suite.\n' + active_uri.toString());
 					return Promise.resolve(false);
-				} else {
+				} else if (test_word === 'test' || test_word === 'spec') {
 					let result;
 					if (active_uri.fsPath.search(/\/app\//) >= 0) {
 						result = process_app_file(active_uri, test_word);
@@ -87,17 +90,18 @@ async function openTestFile() {
 						// It's crude, but should work.
 						result = process_lib_file(active_uri, test_word);
 					} else {
-						vscode.window.showInformationMessage('Wow, you fucked up!\n' + active_uri.toString() + ' is not a valid test file. :(');
+						vscode.window.showInformationMessage('Hmmm, doesn\'t look like this is an app file. :(');
+						console.log('Tried to open non-source file as source file.\n' + active_uri.toString());
 						result = Promise.resolve(false);
 					}
 
 					return result;
+				} else {
+					return Promise.resolve(false);
 				}
 			});
-
-		return did_process;
 	} else {
-		vscode.window.showInformationMessage("Hmm, doesn't look like this is a workspace. :(");
+		vscode.window.showInformationMessage("Hmmm, doesn't look like this is a workspace. :(");
 		return Promise.resolve(false);
 	}
 }
@@ -110,21 +114,21 @@ async function openTestFile() {
  * @return A thenable that resolves to the appropriate test suite keyword or `nope` if neither.
  */
 async function determineTestSuite() {
-	const testy_results = await vscode.workspace.findFiles('**/test/**/*_test.rb', null, 1);
-	if (testy_results.length !== 1) {
-		vscode.workspace.findFiles('**/spec/**/*_spec.rb', null, 1).then((specy_results) => {
-			if (specy_results.length !== 1) {
-				return Promise.resolve('nope');
+	return vscode.workspace.findFiles('**/test/**/*_test.rb', null, 1)
+		.then( async (testy_results) => {
+			if (testy_results.length < 1) {
+				const specy_results = await vscode.workspace.findFiles('**/spec/**/*_spec.rb', null, 1);
+				if (specy_results.length < 1) {
+					return Promise.resolve('nope');
+				}
+				else {
+					return Promise.resolve('spec');
+				}
 			}
 			else {
-				return Promise.resolve('spec');
+				return Promise.resolve('test');
 			}
 		});
-	}
-	else {
-		return Promise.resolve('test');
-	}
-	return Promise.resolve('nope');
 }
 
 async function process_app_file(active_uri: vscode.Uri, test_keyword: String) {
