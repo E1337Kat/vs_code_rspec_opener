@@ -25,7 +25,11 @@ None currently. :)
 
 ## Release Notes
 
-### 0.2.0
+### 0.1.4
+
+* Fix version numbers because I'm a dumbbbb
+
+### 0.1.2
 
 * Added ability to work with structure that uses 'test' rather than 'spec' naming convention.
 * Added ability to open test files for a given file in the app folder.
